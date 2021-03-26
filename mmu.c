@@ -1,6 +1,14 @@
+/*
+* Emma Jonas
+* EECS 3321 Project 3
+* Prof. Khazaei
+* York University
+*/
+
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <time.h>
 
 #define NUM_PAGES 256
 #define PAGE_SIZE 256
@@ -10,21 +18,33 @@
 #define OFFSET 8
 #define CHARS 10
 
+// tlb the page and frame numbers
 struct TLB {
     unsigned char page[TLB_SIZE];
     unsigned char frame[TLB_SIZE];
     int index;
 };
 
+// page table holding frame number, valid bit and counter
+struct PageTable {
+    char table[NUM_PAGES];
+    int valid[NUM_PAGES];
+    int counter[NUM_PAGES];
+};
+
 int main(int argc, char *argv[]) {
 
+    // check if args are correct
     if(argc != 4) {
         printf("Usage: ./<executable> <memory size> <backing store> <address list>\n");
         exit(0);
     }
 
+    // 128 or 256
     int size = atoi(argv[1]);
+    // backing store file
     const char *backing = argv[2];
+    // address list
     const char *input = argv[3];
     const char *output;
     int num_frames;
@@ -40,20 +60,27 @@ int main(int argc, char *argv[]) {
         exit(0);
     }
 
+    // init main memory
     char main_mem[num_frames][FRAME_SIZE];
 
-    char page_table[NUM_PAGES];
-    memset(page_table, -1, sizeof(page_table));
+    // init page table
+    struct PageTable pt;
+    memset(pt.table, -1, sizeof(pt.table));
+    memset(pt.valid, 0, sizeof(pt.valid));
+    memset(pt.counter, -1, sizeof(pt.counter));
 
+    // init TLB
     struct TLB tlb;
     tlb.index = 0;
     memset(tlb.page, -1, sizeof(tlb.page));
     memset(tlb.frame, -1, sizeof(tlb.frame));
 
+    // open the files
     FILE *backing_store = fopen(backing, "r");
     FILE *input_fp = fopen(input, "r");
     FILE *output_fp = fopen(output, "w");
 
+    // check for errors
     if(backing_store == NULL || input_fp == NULL) {
         printf("Failed to open file.\n");
         exit(0);
@@ -62,12 +89,17 @@ int main(int argc, char *argv[]) {
     char logic[CHARS];
     int count = 0, page_fault = 0, free_frame = 0, hits = 0;
 
+    // read each line
     while(fgets(logic, CHARS, input_fp) != NULL) {
+        // increment overall address counter
+        count++;
+        // get logical address, page number and offset
         int logical = atoi(logic);
         int page = (logical >> OFFSET) & MASK;
         int offset = logical & MASK;
-        int frame = 0, new_frame = 0, hit = 0;
 
+        int frame = 0, new_frame = 0, hit = 0;
+        // check if the page is in the TLB
         for (int i = 0; i < TLB_SIZE; i++) {
             if(tlb.page[i] == page) {
                 frame = tlb.frame[i];
@@ -77,38 +109,74 @@ int main(int argc, char *argv[]) {
             }
         }
 
+        // if the page is not in the TLB
         if(hit == 0) {
-            if(page_table[page] == -1) {
-
+            // if the page is not in main memory
+            if(pt.valid[page] == 0) {
+                // increment page fault counter
+                page_fault++;
+                // init the memory contents
                 char mem_contents[FRAME_SIZE];
                 memset(mem_contents, 0, sizeof(mem_contents));
-
+                // search the backing store for the value
                 if (fseek(backing_store, page * FRAME_SIZE, SEEK_SET) != 0)
                     printf("fseek: error\n");
 
                 if (fread(mem_contents, sizeof(char), FRAME_SIZE, backing_store) == 0)
                     printf("fread: error\n");
 
-                for(int i = 0; i < FRAME_SIZE; i++) {
-                    main_mem[free_frame][i] = mem_contents[i];
+                // if there is room in main memory
+                if (free_frame < num_frames) {
+                    // load backing store contents into main mem
+                    for(int i = 0; i < FRAME_SIZE; i++) {
+                        main_mem[free_frame][i] = mem_contents[i];
+                    }
+                    // set the new frame
+                    new_frame = free_frame;
+                    pt.table[page] = new_frame;
+                    pt.valid[page] = 1;
+                    // increment frame number
+                    free_frame++;
+                } else { // there is no room in main memory, need page replacement
+
+                    // find least recently used frame in main memory
+                    int smallest = 0;
+                    for (int i = 0; i < NUM_PAGES; i++) {
+                        if(pt.counter[smallest] == -1 && pt.counter[i] > -1) {
+                            smallest = i;
+                        }
+                        if(pt.counter[i] < pt.counter[smallest] && pt.counter[i] > -1) {
+                            smallest = i;
+                        }
+                    }
+                    // set the new frame to be the least recently used frame
+                    new_frame = pt.table[smallest];
+                    // load backing store contents into frame to be replaced
+                    for(int i = 0; i < FRAME_SIZE; i++) {
+                        main_mem[new_frame][i] = mem_contents[i];
+                    }
+                    // load into the page table and set the valid bit
+                    pt.table[page] = new_frame;
+                    pt.valid[page] = 1;
+                    // update replaced page to be invalid (not in main memory)
+                    pt.table[smallest] = -1;
+                    pt.valid[smallest] = 0;
+                    pt.counter[smallest] = -1;
                 }
-
-                new_frame = free_frame;
-                page_table[page] = new_frame;
-
-                free_frame++;
-                page_fault++;
             }
-            frame = page_table[page];
+            // get the frame number
+            frame = pt.table[page];
+            // update the TLB with the newly loaded page (FIFO)
             tlb.page[tlb.index] = page;
-            tlb.frame[tlb.index] = page_table[page];
+            tlb.frame[tlb.index] = pt.table[page];
             tlb.index = (tlb.index + 1) % TLB_SIZE;
         }
-
+        // update clock to newly accessed time
+        pt.counter[page] = clock();
+        // get the physical address and the value
         int physical = ((unsigned char)frame * FRAME_SIZE) + offset;
         int value = *((char*)main_mem + physical);
         fprintf(output_fp, "%d,%d,%d\n", logical, physical, value);
-        count++;
     }
 
     fprintf(output_fp, "Page Faults Rate, %.2f%%,\n", (page_fault / (count * 1.0)) * 100);
