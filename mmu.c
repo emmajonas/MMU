@@ -143,17 +143,15 @@ int main(int argc, char *argv[]) {
                     free_frame++;
                 } else { // if there is no room in main memory, need page replacement
                     // find least recently used frame in main memory
-                    int smallest = 0;
+                    // the page table with largest counter is the least recently used
+                    int least = 0;
                     for (int i = 0; i < NUM_PAGES; i++) {
-                        if(pt.counter[smallest] == -1 && pt.counter[i] > -1) {
-                            smallest = i;
-                        }
-                        if(pt.counter[i] < pt.counter[smallest] && pt.counter[i] > -1) {
-                            smallest = i;
+                        if(pt.counter[i] > pt.counter[least]) {
+                            least = i;
                         }
                     }
                     // set the new frame to be the least recently used frame
-                    new_frame = pt.table[smallest];
+                    new_frame = pt.table[least];
                     // load backing store contents into new frame on main mem
                     for(int i = 0; i < FRAME_SIZE; i++) {
                         main_mem[new_frame][i] = mem_contents[i];
@@ -162,9 +160,9 @@ int main(int argc, char *argv[]) {
                     pt.table[page] = new_frame;
                     pt.valid[page] = 1;
                     // update replaced page to be invalid (not in main memory)
-                    pt.table[smallest] = -1;
-                    pt.valid[smallest] = 0;
-                    pt.counter[smallest] = -1;
+                    pt.table[least] = -1;
+                    pt.valid[least] = 0;
+                    pt.counter[least] = -1;
                 }
             }
             // get the frame number from page table
@@ -174,8 +172,14 @@ int main(int argc, char *argv[]) {
             tlb.frame[tlb.index] = pt.table[page];
             tlb.index = (tlb.index + 1) % TLB_SIZE;
         }
-        // update clock to latest access time
-        pt.counter[page] = clock();
+        // update counter to indicate the page was accessed
+        pt.counter[page] = 0;
+        // increment all the page counters in the page table
+        for(int i = 0; i < NUM_PAGES; i++) {
+            if(pt.counter[i] > -1) {
+                pt.counter[i]++;
+            }
+        }
         // get the physical address and the value from main memory
         int physical = ((unsigned char)frame * FRAME_SIZE) + offset;
         int value = *((char*)main_mem + physical);
@@ -184,7 +188,7 @@ int main(int argc, char *argv[]) {
     }
     // output stats to file
     fprintf(output_fp, "Page Faults Rate, %.2f%%,\n", (page_fault / (count * 1.0)) * 100);
-    fprintf(output_fp, "TLB Hits Rate, %.2f%%,\n", (hits / (count * 1.0)) * 100);
+    fprintf(output_fp, "TLB Hits Rate, %.2f%%,", (hits / (count * 1.0)) * 100);
     // close files
     fclose(input_fp);
     fclose(output_fp);
