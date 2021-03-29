@@ -124,7 +124,7 @@ int main(int argc, char *argv[]) {
                 // search the backing store for the value
                 if (fseek(backing_store, page * FRAME_SIZE, SEEK_SET) != 0)
                     printf("fseek: error\n");
-
+                // save the backing store value into mem_contents
                 if (fread(mem_contents, sizeof(char), FRAME_SIZE, backing_store) == 0)
                     printf("fread: error\n");
 
@@ -144,14 +144,14 @@ int main(int argc, char *argv[]) {
                 } else { // if there is no room in main memory, need page replacement
                     // find least recently used frame in main memory
                     // the page table with largest counter is the least recently used
-                    int least = 0;
+                    int lru = 0;
                     for (int i = 0; i < NUM_PAGES; i++) {
-                        if(pt.counter[i] > pt.counter[least]) {
-                            least = i;
+                        if(pt.counter[i] > pt.counter[lru]) {
+                            lru = i;
                         }
                     }
                     // set the new frame to be the least recently used frame
-                    new_frame = pt.table[least];
+                    new_frame = pt.table[lru];
                     // load backing store contents into new frame on main mem
                     for(int i = 0; i < FRAME_SIZE; i++) {
                         main_mem[new_frame][i] = mem_contents[i];
@@ -160,9 +160,9 @@ int main(int argc, char *argv[]) {
                     pt.table[page] = new_frame;
                     pt.valid[page] = 1;
                     // update replaced page to be invalid (not in main memory)
-                    pt.table[least] = -1;
-                    pt.valid[least] = 0;
-                    pt.counter[least] = -1;
+                    pt.table[lru] = -1;
+                    pt.valid[lru] = 0;
+                    pt.counter[lru] = -1;
                 }
             }
             // get the frame number from page table
@@ -174,7 +174,7 @@ int main(int argc, char *argv[]) {
         }
         // update counter to indicate the page was accessed
         pt.counter[page] = 0;
-        // increment all the page counters in the page table
+        // increment all the valid page counters in the page table
         for(int i = 0; i < NUM_PAGES; i++) {
             if(pt.counter[i] > -1) {
                 pt.counter[i]++;
