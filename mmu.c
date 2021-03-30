@@ -8,7 +8,6 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
-#include <time.h>
 
 #define NUM_PAGES 256
 #define PAGE_SIZE 256
