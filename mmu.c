@@ -144,7 +144,7 @@ int main(int argc, char *argv[]) {
                     // find least recently used frame in main memory
                     // the page table with largest counter is the least recently used
                     int lru = 0;
-                    for (int i = 0; i < NUM_PAGES; i++) {
+                    for (int i = 1; i < NUM_PAGES; i++) {
                         if(pt.counter[i] > pt.counter[lru]) {
                             lru = i;
                         }
@@ -166,13 +166,14 @@ int main(int argc, char *argv[]) {
             }
             // get the frame number from page table
             frame = pt.table[page];
+            pt.counter[page] = 0;
             // update the TLB with the newly loaded page (FIFO)
             tlb.page[tlb.index] = page;
             tlb.frame[tlb.index] = pt.table[page];
             tlb.index = (tlb.index + 1) % TLB_SIZE;
         }
         // update counter to indicate the page was accessed
-        pt.counter[page] = 0;
+        // pt.counter[page] = 0;
         // increment all the valid page counters in the page table
         for(int i = 0; i < NUM_PAGES; i++) {
             if(pt.counter[i] > -1) {
